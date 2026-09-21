@@ -1,0 +1,28 @@
+---
+title: "EDA_analysis"
+author: "DC"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Se cargan los archivos csv como tablas en duckdb
+```{r}
+source('load_data.R')
+```
+```{r}
+dbGetQuery(con, 
+          "SELECT * FROM clientes LIMIT 5;"
+          )
+```
+
+
+Se cierra la conexión para liberar memoria
+```{r}
+# Desconectar y liberar memoria
+dbDisconnect(con, shutdown = TRUE)
+```
+
