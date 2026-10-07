@@ -2,29 +2,52 @@
 title: "EDA_analysis"
 author: "DC"
 date: "`r Sys.Date()`"
-output:
-  pdf_document: default
-  html_document: default
+output: pdf_document
+pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Se cargan los archivos csv como tablas en duckdb
-```{r}
+Se cargan los archivos csv como tablas en duckdb, ver script load_dara.R
+
+```{r, warning=FALSE, message=FALSE}
 source('load_data.R')
 ```
+
 ```{r}
-dbGetQuery(con, 
-          "SELECT * FROM pedidos LIMIT 6;"
+pedidos_por_mes <- dbGetQuery(con, 
+          "
+             WITH pedidos_por_mes AS (
+                SELECT pedido_id,
+                EXTRACT(month FROM fecha_pedido) AS mes
+                FROM pedidos
+             )
+             
+             SELECT COUNT(pedido_id) AS pedidos,
+             mes
+             FROM pedidos_por_mes
+             GROUP BY mes;
+          "
           )
 ```
 
+Se carga librería para visualización
+
+```{r}
+library(ggplot2)
+```
+
+```{r}
+g <- ggplot(data = pedidos_por_mes, aes(x = factor(mes), y = pedidos))
+g <- g + geom_col() + labs(x = 'mes', title='Suma de pedidos por mes del año')
+g
+```
 
 Se cierra la conexión para liberar memoria
+
 ```{r}
 # Desconectar y liberar memoria
 dbDisconnect(con, shutdown = TRUE)
 ```
-
