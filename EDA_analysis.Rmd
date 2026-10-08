@@ -16,21 +16,41 @@ Se cargan los archivos csv como tablas en duckdb, ver script load_dara.R
 source('load_data.R')
 ```
 
+## Análisis Exploratorio
+
+### ¿Cómo evoluciona la cantidad de pedidos en el tiempo?
+
 ```{r}
-pedidos_por_mes <- dbGetQuery(con, 
+dbGetQuery(
+    con,
+    "
+    SELECT * FROM pedidos LIMIT 3;
+    "
+)
+```
+
+```{r}
+pedidos_mes_año <- dbGetQuery(con, 
           "
              WITH pedidos_por_mes AS (
                 SELECT pedido_id,
+                EXTRACT(year FROM fecha_pedido) As año,
                 EXTRACT(month FROM fecha_pedido) AS mes
                 FROM pedidos
+                WHERE estado = 'entregado'
              )
              
              SELECT COUNT(pedido_id) AS pedidos,
-             mes
+             mes,
+             año,
              FROM pedidos_por_mes
-             GROUP BY mes;
+             GROUP BY año, mes;
           "
           )
+```
+
+```{r}
+head(pedidos_mes_año)
 ```
 
 Se carga librería para visualización
@@ -40,10 +60,56 @@ library(ggplot2)
 ```
 
 ```{r}
-g <- ggplot(data = pedidos_por_mes, aes(x = factor(mes), y = pedidos))
-g <- g + geom_col() + labs(x = 'mes', title='Suma de pedidos por mes del año')
+g <- ggplot(data = pedidos_mes_año, aes(x = factor(mes), y = pedidos))
+g <- g + facet_grid(cols=vars(año)) +  geom_col() + labs(x = 'mes', title='Suma de pedidos por mes del año') 
 g
 ```
+
+Se observa un marcada estacionalidad en la cantidad de pedidos, con picos en el mes de diciembre y mínimos en los meses de invierno. También se observa un crecimiento en la cantidad de pedidos la cual conviene investigar.
+
+### ¿El aumento en demanda se debe nuevos clientes ingresando cada año?
+
+```{r}
+dbGetQuery(
+    con,
+    "
+    SELECT * FROM clientes LIMIT 3;
+    "
+)
+```
+
+```{r}
+total_clientes_año <- dbGetQuery(
+    con,
+    "
+    WITH cliente_año AS (
+    SELECT 
+        COUNT(cliente_id) AS clientes,
+        EXTRACT(year FROM fecha_alta) AS año
+    FROM clientes
+    GROUP BY año
+    )
+    
+    SELECT
+        año,
+        SUM(clientes)
+        OVER(   
+                ORDER BY año ASC
+                ROWS BETWEEN UNBOUNDED PRECEDING
+                AND CURRENT ROW) AS total_clientes,
+    FROM cliente_año
+    ORDER BY año DESC;
+    "
+)
+```
+
+```{r}
+g <- ggplot(data=total_clientes_año, aes(x = factor(año), y = total_clientes))
+g <- g + geom_col() + labs(title = 'Clientes acumulados por año', x = 'Año', y='Clientes')
+g
+```
+
+Se observa como crece la cantidad de clientes en cada año lo que indica que al menos en parte el crecimiento de demanda se debe a la incremento anual de clientes.
 
 Se cierra la conexión para liberar memoria
 
