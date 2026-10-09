@@ -65,7 +65,50 @@ g <- g + facet_grid(cols=vars(año)) +  geom_col() + labs(x = 'mes', title='Suma
 g
 ```
 
-Se observa un marcada estacionalidad en la cantidad de pedidos, con picos en el mes de diciembre y mínimos en los meses de invierno. También se observa un crecimiento en la cantidad de pedidos la cual conviene investigar.
+Se observa un marcada estacionalidad en la cantidad de pedidos mensuales, con picos en el mes de diciembre y mínimos en los meses de invierno.
+
+```{r}
+# Registrar el data.frame como una tabla en DuckDB
+dbWriteTable(con, "pedidos_mes_año", pedidos_mes_año, overwrite=TRUE)
+
+pedidos_año <- dbGetQuery(
+    con,
+    "
+    SELECT año, SUM(pedidos) AS pedidos
+    FROM pedidos_mes_año
+    GROUP BY año;
+    "
+)
+```
+
+```{r}
+g <- ggplot(data = pedidos_año, aes(x = factor(año), y = pedidos))
+g <- g +  geom_col() + labs(x = 'Año', title='Suma de pedidos por año') 
+g
+```
+
+Hay un aumento anual de pedidos en los últimos años
+
+```{r}
+dbGetQuery(
+    con,
+    "
+    WITH pedidos_año AS (
+        SELECT año, SUM(pedidos) AS pedidos
+        FROM pedidos_mes_año
+        GROUP BY año
+    )
+    
+    SELECT
+    año,
+    ROUND(
+    (pedidos - LAG(pedidos) OVER(ORDER BY año)) 
+    / (LAG(pedidos) OVER(ORDER BY año)) * 100, 2) || ' %' AS inc_pedidos
+    FROM pedidos_año
+    "
+)
+```
+
 
 ### ¿El aumento en demanda se debe nuevos clientes ingresando cada año?
 
