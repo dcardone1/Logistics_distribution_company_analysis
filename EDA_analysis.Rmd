@@ -10,6 +10,13 @@ pdf_document: default
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Se importan librerías para manipular datos y fechas
+
+```{r, message=FALSE}
+library(dplyr)
+library(lubridate)
+```
+
 Se cargan los archivos csv como tablas en duckdb, ver script load_dara.R
 
 ```{r, warning=FALSE, message=FALSE}
@@ -109,6 +116,7 @@ dbGetQuery(
 )
 ```
 
+El crecimiento en el número de pedidos en 2023 respecto al año anterior es del 4.31% y del 2.59% en 2024
 
 ### ¿El aumento en demanda se debe nuevos clientes ingresando cada año?
 
@@ -152,7 +160,72 @@ g <- g + geom_col() + labs(title = 'Clientes acumulados por año', x = 'Año', y
 g
 ```
 
-Se observa como crece la cantidad de clientes en cada año lo que indica que al menos en parte el crecimiento de demanda se debe a la incremento anual de clientes.
+Se observa como crece la cantidad de clientes en cada año lo que indica que al menos en parte el crecimiento de demanda se debe a la incremento anual de clientes sin embargo también hay clientes dados de baja.
+
+### ¿Cómo evoluciona la cantidad de clientes mes a mes?
+
+Se crea una tabla backbone de fechas en serie
+
+```{r}
+fechas_limite <- dbGetQuery(
+    con,
+    "
+    SELECT 
+    MIN(fecha_alta) AS fecha_inicio_alta,
+    MAX(fecha_alta) AS fecha_fin_alta,
+    MIN(fecha_baja) AS fecha_inicio_baja,
+    MAX(fecha_baja) AS fecha_fin_baja
+    FROM clientes;
+    "
+)
+```
+```{r}
+fechas_limite
+```
+```{r}
+inicio <- ymd('2020-01-01')
+fin <- ymd('2024-12-31')
+
+dates <- c(inicio)
+new_date <- inicio
+
+while (new_date <= fin) {
+    new_date = new_date + days(x=1)
+    dates <- c(dates, new_date)
+}
+
+# Registrar el data.frame como una tabla en DuckDB
+dbWriteTable(con, "serie_fechas", dates_df, overwrite=TRUE)
+
+dates_df
+```
+
+
+```{r}
+clientes_diarios <- dbGetQuery(
+    con,
+    "
+        SELECT dates, (
+            SELECT COUNT(cliente_id) FROM clientes WHERE fecha_alta <= dates
+            
+        ) AS clientes_alta,
+        (
+            SELECT COUNT(cliente_id) FROM clientes WHERE fecha_baja <= dates
+        ) AS clientes_baja
+        FROM serie_fechas
+    "
+)
+
+head(clientes_diarios)
+```
+
+```{r}
+g <- ggplot(data = clientes_diarios, aes(x = dates, y = clientes_activos))
+g <- g + geom_line(aes(y = clientes_alta), color='blue') + geom_line(aes(y = clientes_baja), color='red')
+g
+```
+
+
 
 Se cierra la conexión para liberar memoria
 
