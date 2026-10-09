@@ -129,40 +129,7 @@ dbGetQuery(
 )
 ```
 
-```{r}
-total_clientes_año <- dbGetQuery(
-    con,
-    "
-    WITH cliente_año AS (
-    SELECT 
-        COUNT(cliente_id) AS clientes,
-        EXTRACT(year FROM fecha_alta) AS año
-    FROM clientes
-    GROUP BY año
-    )
-    
-    SELECT
-        año,
-        SUM(clientes)
-        OVER(   
-                ORDER BY año ASC
-                ROWS BETWEEN UNBOUNDED PRECEDING
-                AND CURRENT ROW) AS total_clientes,
-    FROM cliente_año
-    ORDER BY año DESC;
-    "
-)
-```
-
-```{r}
-g <- ggplot(data=total_clientes_año, aes(x = factor(año), y = total_clientes))
-g <- g + geom_col() + labs(title = 'Clientes acumulados por año', x = 'Año', y='Clientes')
-g
-```
-
-Se observa como crece la cantidad de clientes en cada año lo que indica que al menos en parte el crecimiento de demanda se debe a la incremento anual de clientes sin embargo también hay clientes dados de baja.
-
-### ¿Cómo evoluciona la cantidad de clientes mes a mes?
+### ¿Cómo evoluciona la cantidad de clientes en el tiempo?
 
 Se crea una tabla backbone de fechas en serie
 
@@ -179,9 +146,11 @@ fechas_limite <- dbGetQuery(
     "
 )
 ```
+
 ```{r}
 fechas_limite
 ```
+
 ```{r}
 inicio <- ymd('2020-01-01')
 fin <- ymd('2024-12-31')
@@ -194,25 +163,24 @@ while (new_date <= fin) {
     dates <- c(dates, new_date)
 }
 
+dates_df <- data.frame(date= dates)
+
 # Registrar el data.frame como una tabla en DuckDB
 dbWriteTable(con, "serie_fechas", dates_df, overwrite=TRUE)
 
 dates_df
 ```
 
-
 ```{r}
 clientes_diarios <- dbGetQuery(
     con,
     "
-        SELECT dates, (
-            SELECT COUNT(cliente_id) FROM clientes WHERE fecha_alta <= dates
-            
-        ) AS clientes_alta,
-        (
-            SELECT COUNT(cliente_id) FROM clientes WHERE fecha_baja <= dates
-        ) AS clientes_baja
-        FROM serie_fechas
+    SELECT date,
+        (SELECT COUNT(cliente_id) FROM clientes WHERE fecha_alta <= date)
+        AS clientes_alta,
+        (SELECT COUNT(cliente_id) FROM clientes WHERE fecha_baja <= date) 
+        AS clientes_baja
+    FROM serie_fechas;
     "
 )
 
@@ -220,12 +188,42 @@ head(clientes_diarios)
 ```
 
 ```{r}
-g <- ggplot(data = clientes_diarios, aes(x = dates, y = clientes_activos))
-g <- g + geom_line(aes(y = clientes_alta), color='blue') + geom_line(aes(y = clientes_baja), color='red')
+g <- ggplot(data = clientes_diarios, aes(x = dates))
+g <- g + geom_line(aes(y = clientes_alta), color='blue') +
+        geom_line(aes(y = clientes_baja), color='red') + 
+        geom_line(aes(y = (clientes_alta - clientes_baja))) +
+    labs(title='Evlolución de clientes en el tiempo', x ='fecha', y='cantitad clientes')
 g
 ```
 
+```{r}
+dbWriteTable(con, "clientes_diarios", clientes_diarios, overwrite=TRUE)
 
+dbGetQuery(
+    con,
+    "
+    WITH clientes_fin_año AS (
+        SELECT
+        EXTRACT(year FROM date) AS date,
+        clientes_alta - clientes_baja AS clientes_activos
+        FROM clientes_diarios
+        WHERE date IN ('2022-12-31', '2023-12-31','2024-12-31')
+    )
+    
+    SELECT
+        date,
+        clientes_activos,
+        ROUND(
+                (clientes_activos - LAG(clientes_activos) OVER(ORDER BY date)) /
+                LAG(clientes_activos) OVER(ORDER BY date) * 100
+            , 2) || ' %' AS incremento_porcentual
+    FROM clientes_fin_año;
+        
+    "
+)
+```
+
+El incremento de clientes correlaciona con el incremento en la cantidad de pedidos.
 
 Se cierra la conexión para liberar memoria
 
